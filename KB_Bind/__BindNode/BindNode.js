@@ -135,9 +135,26 @@ define(['./__Bind','./__Diff'],function(CreateBind,CreateDiff){
     //we can attach to the value of the opposite of the move eg bind at pos 3 move from 4 to 3, we check pos 2 if it was an add, if so this is the new bind else if deleted
     //bind was unsynced, can be synced again by adding bind
 
-    BindNode.compareCheck = function()
+    BindNode.compareCheck = function(e)
     {
       var diff = _diff(_textMap,(_isAttr ? _node.value : _node.textContent));
+      var changes = 0;
+
+      diff.reduce(function(o,k,i){
+
+      },[])
+
+      for(var x=0;x<diff.length;x+=1)
+      {
+        if(diff.change === 'delete')
+        {
+          changes += 1;
+        }
+      }
+      if(changes > 1)
+      {
+        e.preventDefault();
+      }
       console.log(diff);
     }
 

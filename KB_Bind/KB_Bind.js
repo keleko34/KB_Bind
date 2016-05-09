@@ -19,13 +19,13 @@ define(['./__Assets/KB','./__BindNode'],function(CreateKB,CreateBindNode){
           if(_textListeners.indexOf(e.attr) > -1)
           {
             _textBinds.forEach(function(k,i){
-              k.compareCheck();
+              k.compareCheck(e);
             });
           }
           else
           {
             _attrBinds.forEach(function(k,i){
-              k.compareCheck();
+              k.compareCheck(e);
             });
           }
         }
@@ -102,72 +102,136 @@ define(['./__Assets/KB','./__BindNode'],function(CreateKB,CreateBindNode){
       }
     }
 
+    //Search all text nodes for the designated search text and return list of text nodes
     KB_Bind.SearchAllTextNodes = function(searchText)
     {
-      var lookingInBody = false;
-      return Array.prototype.concat.apply([],(Array.prototype.slice.call(document.all).map(function(k,i){
-        if(k.nodeName === 'BODY') lookingInBody = true;
-        return (lookingInBody ? Array.prototype.concat.apply([],Array.prototype.slice.call(k.childNodes).filter(function(d,x){
-          return (d.nodeName === '#text' && d.textContent.indexOf(searchText) > -1);
-        })) : null);
-      })).filter(function(k,i){
-        return (k !== null);
-      }));
+      var lookingInBody = false
+        , all = document.all
+        , childs = []
+        , _arr = []
+        , n = {}
+        , i
+        , x;
+      for(x=0;x<all.length;x++)
+      {
+        if(all[x].nodeName === 'BODY') lookingInBody = true;
+        if(lookingInBody)
+        {
+          childs = document.all[x].childNodes;
+          for(i=0;i<childs.length;i++)
+          {
+            if(childs[i].nodeName === '#text' && childs[i].textContent.indexOf(searchText) > -1)
+            {
+              n = {parentNode:all[x],text:childs[i]};
+              _arr.push(n);
+            }
+          }
+        }
+      }
+      return _arr;
     }
 
+    //Search all node attributes for the designated search text and return list of attribute objects
     KB_Bind.SearchAllAttributes = function(searchText)
     {
-      var lookingInBody = false;
-      return Array.prototype.concat.apply([],(Array.prototype.slice.call(document.all).map(function(k,i){
-        if(k.nodeName === 'BODY') lookingInBody = true;
-        return (lookingInBody ? Array.prototype.concat.apply([],Array.prototype.slice.call(k.attributes).filter(function(d,x){
-          return (d.value.indexOf(searchText) > -1);
-        }).map(function(d,x){
-          d.parentElement = k;
-          return d;
-        })) : null);
-      })).filter(function(k,i){
-        return (k !== null);
-      }));
+      var lookingInBody = false
+      , _arr = []
+      , attrs = []
+      , all = document.all
+      , n = {}
+      , i
+      , x;
+
+      for(x=0;x<all.length;x++)
+      {
+        if(all[x].nodeName === 'BODY') lookingInBody = true;
+        if(lookingInBody)
+        {
+          attrs = all[x].attributes;
+          for(i=0;i<attrs.length;i++)
+          {
+            if(attrs[i].value.indexOf(searchText) > -1)
+            {
+              n = {parentNode:all[x],attr:attrs[i]};
+              _arr.push(n);
+            }
+          }
+        }
+      }
+      return _arr;
     }
 
+    //returns an array of all bind objects with the bind name of the id passed
     KB_Bind.getBindsById = function(id)
     {
-      return Array.prototype.concat.apply([],_textBinds.map(function(k,i){
-        return k.getBindById(id);
-      }).filter(function(k,i){
-        return (k.length > 0);
-      }).concat(_attrBinds.map(function(k,i){
-        return k.getBindById(id);
-      }).filter(function(k,i){
-        return (k.length > 0);
-      })));
+      var _arr = []
+        , x
+        , i
+        , localBinds = []
+
+      for(x=0;x<_textBinds.length;x++)
+      {
+        localBinds = _textBinds[x].getBindById(id);
+        if(localBinds.length > 0)
+        {
+          for(i=0;i<localBinds.length;i++)
+          {
+            _arr.push(localBinds[i]);
+          }
+        }
+      }
+
+      for(x=0;x<_attrBinds.length;x++)
+      {
+        localBinds = _attrBinds[x].getBindById(id);
+        if(localBinds.length > 0)
+        {
+          for(i=0;i<localBinds.length;i++)
+          {
+            _arr.push(localBinds[i]);
+          }
+        }
+      }
+
+      return _arr;
     }
 
+    //updates all binds associated with the bind name of the passed id with the new value
     KB_Bind.updateBindsById = function(id,value)
     {
-      KB_Bind.getBindsById(id).forEach(function(k,i){
-        k.value(value).call();
-      });
+      var binds = KB_Bind.getBindsById(id)
+        , x;
+      for(x=0;x<binds.length;x++)
+      {
+        binds[x].value(value).call();
+      }
+      return KB_Bind;
     }
 
+    //checks if any binds elements have been removed from the DOM
     KB_Bind.updateUnsynced = function()
     {
-      _textBinds = _textBinds.map(function(k,i){
-        return (k.node().parentElement === null ? null : k);
-      }).filter(function(k,i){
-        return (k !== null);
-      });
+      var x;
+      for(x=0;x<_textBinds.length;x++)
+      {
+        if(_textBinds[x].node().parentElement === null)
+        {
+          _textBinds.splice(x,1);
+        }
+      }
 
-      _attrBinds = _attrBinds.map(function(k,i){
-        return (k.node().parentElement === null ? null : k);
-      }).filter(function(k,i){
-        return (k !== null);
-      });
+      for(x=0;x<_attrBinds.length;x++)
+      {
+        if(_attrBinds[x].node().parentElement === null)
+        {
+          _attrBinds.splice(x,1);
+        }
+      }
 
       return KB_Bind;
     }
 
+    //gets all attribute type for the watch to listen for the events of those changes
     KB_Bind.getAllAttributeTypes = function()
     {
       return Array.prototype.concat.apply([],_attrBinds.map(function(k,i){
