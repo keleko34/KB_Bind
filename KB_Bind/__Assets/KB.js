@@ -1,46 +1,70 @@
 define([],function(){
 	function CreateKB(){
 
+        //holds all preset listeners per attribute eg: {innerHTML:[func,func,func]}
         var _attrListeners = {}
+        //holds all postset listeners per attribute eg: {innerHTML:[func,func,func]}
           , _attrUpdateListeners = {}
-          , _injected = []
-          , _inputs = [];
+        //holds all injected objects and thier descriptors, functions and set and update functions eg: {HTMLElement:{obj:HTMLElement,proto:HTMLElement.prototype,descriptors:{},functions:{},set:function(){},update:function(){}}}
+          , _injected = {}
+        //holds all synced inputs for checking value updates
+          , _inputs = []
+        //used in all for loops
+          , x
+        //the base event object that is passed to every listeners upon change
+          , _changeEvent = function(el,attr,value,oldValue,args,action){
+              this.stopPropagation = function(){this._stopPropogation = true;};
+              this.preventDefault = function(){this._preventDefault = true;};
+              this.value = value;
+              this.oldValue = oldValue;
+              this.target = el;
+              this.attr = attr;
+              this.arguments = args;
+              this.action = action;
+            }
+        //the set function that runs on all changes
+          , _set = function(el,prop,val,ret,args){
+              var e = new _changeEvent(el,prop,val,ret,args);
+              var ret = true;
 
-        function Bind()
-        {
-          var changeEvent = function(el,attr,value,oldValue,args,action){
-            this.stopPropagation = function(){this._stopPropogation = true;};
-            this.preventDefault = function(){this._preventDefault = true;};
-            this.value = value;
-            this.oldValue = oldValue;
-            this.target = el;
-            this.attr = attr;
-            this.arguments = args;
-            this.action = action;
-          }
-
-          var set = function(el,prop,val,ret,args){
-            var e = new changeEvent(el,prop,val,ret,args);
-            if(_attrListeners[prop] !== undefined)
-            {
-              for(var x=0;x<_attrListeners[prop].length;x+=1)
+              if(_attrListeners[prop] !== undefined)
               {
-                _attrListeners[prop][x].call(el,e);
-                if(e._stopPropogation)
+                for(x=0;x<_attrListeners[prop].length;x+=1)
                 {
-                  return true;
-                }
-                if(e._preventDefault)
-                {
-                  return false;
+                  _attrListeners[prop][x].call(el,e);
+                  if(e._stopPropogation)
+                  {
+                    return ret;
+                  }
+                  if(e._preventDefault)
+                  {
+                    ret = false;
+                  }
                 }
               }
-            }
-            return true;
-          }
 
-          var update = function(el,prop,val,ret,args,action){
-            var e = new changeEvent(el,prop,val,ret,args,action);
+              if(el.kb_attrListeners !== undefined && el.kb_attrListeners[prop] !== undefined)
+              {
+                for(x=0;x<el.kb_attrListeners[prop].length;x+=1)
+                {
+                  el.kb_attrListeners[prop][x].call(el,e);
+                  if(e._stopPropogation)
+                  {
+                    return ret;
+                  }
+                  if(e._preventDefault)
+                  {
+                    ret = false;
+                  }
+                }
+              }
+
+              return ret;
+            }
+        //the update function that runs on all changes
+          , _update = function(el,prop,val,ret,args,action){
+            var e = new _changeEvent(el,prop,val,ret,args,action);
+            var ret = true;
             if(_attrUpdateListeners[prop] !== undefined)
             {
               for(var x=0;x<_attrUpdateListeners[prop].length;x+=1)
@@ -48,43 +72,113 @@ define([],function(){
                 _attrUpdateListeners[prop][x].call(el,e);
                 if(e._stopPropogation)
                 {
-                  return true;
+                  return ret;
                 }
                 if(e._preventDefault)
                 {
-                  return false;
+                  ret = false;
                 }
               }
             }
-            return true;
+
+            if(el.kb_attrUpdateListeners !== undefined && el.kb_attrUpdateListeners[prop] !== undefined)
+            {
+              for(var x=0;x<el.kb_attrUpdateListeners[prop].length;x+=1)
+              {
+                el.kb_attrUpdateListeners[prop][x].call(el,e);
+                if(e._stopPropogation)
+                {
+                  return ret;
+                }
+                if(e._preventDefault)
+                {
+                  ret = false;
+                }
+              }
+            }
+
+            return ret;
           }
 
+
+        /*** MAIN CONSTRUCTOR ***/
+        function Bind()
+        {
+
+          //resyncs inputs in case new ones were added to the DOM or old ones were removed
           var reSyncInputs = function(){
             var x=0,
-                i = document.getElementsByTagName('INPUT');
-            for(x=0;x<_inputs.length;x++)
+                inp = Array.prototype.slice.call(document.getElementsByTagName('INPUT'))
+                      .filter(function(k){return k.type !== 'radio' && k.type !== 'checkbox';})
+                      .concat(Array.prototype.slice.call(document.getElementsByTagName('TEXTAREA'))),
+                inc = Array.prototype.slice.call(document.getElementsByTagName('INPUT')).filter(function(k){return k.type === 'radio' || k.type === 'checkbox'});
+
+            for(x=0;x<inp.length;x++)
             {
-              if(_inputs[x].parentElement === undefined)
+              if(inp[x].kb_onkeydown === undefined)
               {
-                _inputs[x].kb_removeInputBinding();
-                _inputs.splice(x,1);
+                inp[x].kb_addInputBinding();
               }
             }
-            for(x=0;x<i.length;x++)
+
+            for(x=0;x<inc.length;x++)
             {
-              if(i[x].kb_onkeydown === undefined)
+              if(inc[x].kb_onmousedown === undefined)
               {
-                i[x].kb_addInputBinding();
+                inc[x].kb_addInputBoxBinding();
               }
             }
           }
 
-          Bind.inject(HTMLInputElement,set,update);
-          Bind.inject(Node,set,update);
-          Bind.inject(Element,set,update);
-          Bind.inject(HTMLElement,set,update);
-          Bind.inject(Document,set,update);
+          //checks attributes inside of setAttribute and removeAttribute
+          var checkAttributes = function(e)
+          {
+            var et = new _changeEvent(e.target,e.arguments[0],(e.attr === 'setAttribute' ? e.arguments[1] : ""),e.target.getAttribute(e.arguments[0]),(e.attr === 'setAttribute' ? [e.arguments[1]] : [""]));
+            if(_attrListeners[et.attr] !== undefined)
+            {
+              for(x=0;x<_attrListeners[et.attr].length;x+=1)
+              {
+                _attrListeners[et.attr][x].call(et.target,et);
+                if(et._stopPropogation)
+                {
+                  e.stopPropagation();
+                }
+                if(et._preventDefault)
+                {
+                  e.preventDefault();
+                }
+              }
+            }
+          }
 
+          var checkUpdateAttributes = function(e)
+          {
+            var et = new _changeEvent(e.target,e.arguments[0],(e.attr === 'setAttribute' ? e.arguments[1] : ""),e.target.getAttribute(e.arguments[0]),(e.attr === 'setAttribute' ? [e.arguments[1]] : [""]));
+            if(_attrUpdateListeners[et.attr] !== undefined)
+            {
+              for(x=0;x<_attrUpdateListeners[et.attr].length;x+=1)
+              {
+                _attrUpdateListeners[et.attr][x].call(et.target,et);
+                if(et._stopPropogation)
+                {
+                  e.stopPropagation();
+                }
+              }
+            }
+          }
+
+          var injectedKeys = Object.keys(_injected);
+
+          //checks if any objects were injected without a set, if so the default set and get are added
+          for(x=0;x<injectedKeys.length;x++)
+          {
+            if(_injected[injectedKeys[x]].set === undefined)
+            {
+              Bind.injectPrototypes(_injected[injectedKeys[x]].obj,_set,_update);
+            }
+          }
+
+          Object.keys(_injected).forEach(function(k,i){});
 
           //for keeping binds with inputs
           Bind.addAttrUpdateListener('appendChild',reSyncInputs);
@@ -95,36 +189,163 @@ define([],function(){
           Bind.addAttrUpdateListener('outerText',reSyncInputs);
           Bind.addAttrUpdateListener('textContent',reSyncInputs);
 
+          //allows for html attribute changes to be listened to just like properties
+          Bind.addAttrListener('setAttribute',checkAttributes);
+          Bind.addAttrListener('removeAttribute',checkAttributes);
+
+          Bind.addAttrUpdateListener('setAttribute',checkUpdateAttributes);
+          Bind.addAttrUpdateListener('removeAttribute',checkUpdateAttributes);
+
+          //initially adds inputs for watching
           reSyncInputs();
         }
 
-        Bind.inject = function(obj,set,update){
+        Bind.injectPrototypeProperty = function(obj,key,set,update)
+        {
+          var _proto = obj.prototype,
+              _descriptor = Object.getOwnPropertyDescriptor(_proto,key),
+              _injectName = obj.toString().split(/\s+/)[1].split('{')[0].replace('()','');
+
+          if(_proto.addAttrListener === undefined && _proto.kb_attrListeners === undefined)
+          {
+            _proto.kb_attrListeners = {};
+            _proto.addAttrListener = Bind.addAttrListener;
+            _proto.removeAttrListener = Bind.removeAttrListener;
+          }
+          if(_proto.addAttrUpdateListener === undefined && _proto.kb_attrUpdateListeners === undefined)
+          {
+            _proto.kb_attrUpdateListeners = {};
+            _proto.addAttrUpdateListener = Bind.addAttrUpdateListener;
+            _proto.removeAttrUpdateListener = Bind.removeAttrUpdateListener;
+          }
+
+          if(_injected[_injectName] === undefined)
+          {
+            _injected[_injectName] = {obj:obj,proto:_proto,descriptors:{},set:undefined,update:undefined};
+          }
+          _injected[_injectName].set = (set !== undefined ? set : _injected[_injectName].set);
+          _injected[_injectName].update = (update !== undefined ? update : _injected[_injectName].update);
+
+          _injected[_injectName].descriptors[key] = _descriptor;
+
+          if(_descriptor.set !== undefined && _descriptor.configurable)
+          {
+              Object.defineProperty(_proto,key,{
+                  get:_descriptor.get,
+                  set:function(v)
+                  {
+                      var oldValue = _descriptor.get.apply(this);
+                      if(typeof _injected[_injectName].set == 'function' && _injected[_injectName].set(this,key,v,oldValue,arguments))
+                      {
+                        _descriptor.set.apply(this,arguments);
+                      }
+                      if(typeof _injected[_injectName].update === 'function')
+                      {
+                        _injected[_injectName].update(this,key,v,oldValue);
+                      }
+                  },
+                  enumerable:true,
+                  configurable:true
+              });
+          }
+          else if(typeof _descriptor.value === 'function')
+          {
+              Object.defineProperty(_proto,key,{
+                  value:function()
+                  {
+                    var action = null;
+                    if(typeof _injected[_injectName].set == 'function' && _injected[_injectName].set(this,key,null,null,arguments))
+                    {
+                      action =  _descriptor.value.apply(this,arguments);
+                    }
+                    if(typeof _injected[_injectName].update === 'function')
+                    {
+                      _injected[_injectName].update(this,key,null,null,arguments,action);
+                    }
+                    return action;
+                  },
+                  writable:true,
+                  enumerable:true,
+                  configurable:true
+              });
+          }
+        else if(_descriptor.value !== undefined && _descriptor.configurable)
+        {
+          Object.defineProperty(_proto,key,{
+              get:function()
+              {
+                return _descriptor.value;
+              },
+              set:function(v)
+              {
+                  var oldValue = _descriptor.value;
+                  if(typeof _injected[_injectName].set == 'function' && _injected[_injectName].set(this,key,v,oldValue))
+                  {
+                    _descriptor.value = v;
+                  }
+                  if(typeof _injected[_injectName].update === 'function')
+                  {
+                    _injected[_injectName].update(this,key,v,oldValue);
+                  }
+              },
+              enumerable:true,
+              configurable:true
+          });
+        }
+        }
+
+        /*** Inject Method ***
+         -- injects an objects prototypes to allow for property event listeners
+         */
+        Bind.injectPrototypes = function(obj,set,update){
           var _proto = obj.prototype,
               _injectName = obj.toString().split(/\s+/)[1].split('{')[0].replace('()',''),
               _keys = Object.keys(_proto),
-              x,
               _descriptors = {},
-              _functions = {},
               _onKeyDown = function(e){
-                var oldValue = this.value;
+                var isCheck = false;
+                var oldCheck = "false";
+                if(this.type === 'checkbox' || this.type === 'radio')
+                {
+                  oldCheck = this.checked;
+                  isCheck = true;
+                }
+                var oldValue = (isCheck ? (typeof this.checked === 'string' ? (this.checked === 'true' ? "on" : "off") : (this.checked ? "on" : "off")) : this.value);
                 setTimeout((function(){
-                  if(!set(this,'value',this.value,oldValue))
+                  if(isCheck && !_injected[_injectName].set(this,"checked",this.checked,oldCheck))
+                  {
+                    _descriptors["checked"].set.call(this,oldCheck);
+                  }
+                  else if(isCheck)
+                  {
+                    if(typeof _injected[_injectName].update === 'function')
+                    {
+                      _injected[_injectName].update(this,"checked",this.checked,oldValue);
+                    }
+                  }
+                  this.value = (isCheck ? (typeof this.checked === 'string' ? (this.checked === 'true' ? "on" : "off") : (this.checked ? "on" : "off")) : this.value);
+
+                  if(!_injected[_injectName].set(this,'value',this.value,oldValue))
                   {
                     _descriptors["value"].set.call(this,oldValue);
                   }
                   else
                   {
-                    if(typeof update === 'function')
+                    if(typeof _injected[_injectName].update === 'function')
                     {
-                      update(this,"value",this.value,oldValue);
+                      _injected[_injectName].update(this,"value",this.value,oldValue);
                     }
                   }
                 }).bind(this),0);
               }
 
-          if(_injected.indexOf(_injectName) > -1) return;
+          if(_injected[_injectName] === undefined)
+          {
+            _injected[_injectName] = {obj:obj,proto:_proto,descriptors:{},set:undefined,update:undefined};
+          }
+          _injected[_injectName].set = set;
+          _injected[_injectName].update = update;
 
-          _injected.push(_injectName);
 
           if(_keys.indexOf("value") > -1)
           {
@@ -137,115 +358,180 @@ define([],function(){
               this.addEventListener('keydown',_onKeyDown);
             }
 
-            Object.defineProperty(_proto,"kb_removeInputBinding",{value:removeInputBinding});
-            Object.defineProperty(_proto,"kb_addInputBinding",{value:addInputBinding});
+            var removeInputBoxBinding = function(){
+              this.kb_onmousedown = undefined;
+              this.removeEventListener('mouseup',_onKeyDown);
+            }
+            var addInputBoxBinding = function(){
+              this.kb_onmousedown = true;
+              this.addEventListener('mouseup',_onKeyDown);
+            }
+
+            Object.defineProperty(_proto,"kb_removeInputBinding",{value:removeInputBinding,configurable:true,enumerable:true});
+            Object.defineProperty(_proto,"kb_addInputBinding",{value:addInputBinding,configurable:true,enumerable:true});
+
+            Object.defineProperty(_proto,"kb_removeInputBoxBinding",{value:removeInputBoxBinding,configurable:true,enumerable:true});
+            Object.defineProperty(_proto,"kb_addInputBoxBinding",{value:addInputBoxBinding,configurable:true,enumerable:true});
           }
 
 
           for(x=0;x<_keys.length;x+=1)
           {
-              (function(key){
-                  _descriptors[key] = Object.getOwnPropertyDescriptor(_proto,key);
-                  if(_descriptors[key].set !== undefined)
-                  {
-                      Object.defineProperty(_proto,key,{
-                          get:_descriptors[key].get,
-                          set:function(v)
-                          {
-                              var oldValue = _descriptors[key].get.apply(this);
-                              if(set(this,key,v,oldValue))
-                              {
-                                _descriptors[key].set.apply(this,arguments);
-                              }
-                              if(typeof update === 'function')
-                              {
-                                update(this,key,v,oldValue);
-                              }
-                          },
-                          enumerable:true,
-                          configurable:true
-                      });
-                  }
-                  else if(typeof _descriptors[key].value === 'function')
-                  {
-                      _functions[key] = _descriptors[key].value;
-                      _proto[key] = function()
-                      {
-                          var action = null;
-                          if(set(this,key,null,null,arguments))
-                          {
-                            action = _functions[key].apply(this,arguments);
-                          }
-                          if(typeof update === 'function')
-                          {
-                            update(this,key,null,null,arguments,action);
-                          }
-                          return action;
-                      }
-                  }
-              }(_keys[x]))
+              if(_injected[_injectName].descriptors[_keys[x]] === undefined)
+              {
+                Bind.injectPrototypeProperty(obj,_keys[x]);
+              }
           }
           return Bind;
         }
 
-        Bind.injected = function()
+        /*** Injected Accessor ***
+         -- returns a list of the injected objects
+         */
+        Bind.injectedPrototypes = function()
         {
           return _injected;
         }
 
+        /*** Pre Set Attribute Listener ***
+         -- adds a property event listener to the desired property
+         */
         Bind.addAttrListener = function(attr,func)
         {
-          if(_attrListeners[attr] === undefined)
+          if(this.toString() !== Bind.toString())
           {
-            _attrListeners[attr] = [];
+            if(this.kb_attrListeners[attr] === undefined)
+            {
+              this.kb_attrListeners[attr] = [];
+            }
+            if(typeof func === 'function')
+            {
+              this.kb_attrListeners[attr].push(func);
+            }
+            return this;
           }
-          if(typeof func === 'function')
+          else
           {
-            _attrListeners[attr].push(func);
+            if(_attrListeners[attr] === undefined)
+            {
+              _attrListeners[attr] = [];
+            }
+            if(typeof func === 'function')
+            {
+              _attrListeners[attr].push(func);
+            }
+            return Bind;
           }
-          return Bind;
         }
 
+        /*** Post Set Attribute Listener ***
+         -- adds a property event listener to the desired property
+         */
         Bind.addAttrUpdateListener = function(attr,func)
         {
-          if(_attrUpdateListeners[attr] === undefined)
+          if(this.toString() !== Bind.toString())
           {
-            _attrUpdateListeners[attr] = [];
+            if(this.kb_attrUpdateListeners[attr] === undefined)
+            {
+              this.kb_attrUpdateListeners[attr] = [];
+            }
+            if(typeof func === 'function')
+            {
+              this.kb_attrUpdateListeners[attr].push(func);
+            }
+            return this;
           }
-          if(typeof func === 'function')
+          else
           {
-            _attrUpdateListeners[attr].push(func);
+            if(_attrUpdateListeners[attr] === undefined)
+            {
+              _attrUpdateListeners[attr] = [];
+            }
+            if(typeof func === 'function')
+            {
+              _attrUpdateListeners[attr].push(func);
+            }
+            return Bind;
           }
-          return Bind;
         }
 
+        /*** Remove Pre Set Attribute Listener ***
+         -- removes a property event listener from the desired property
+         */
         Bind.removeAttrListener = function(attr,func)
         {
-          if(_attrListeners[attr] !== undefined && typeof func === 'function')
+          if(this.toString() !== Bind.toString())
           {
-            for(var x=0;x<_attrListeners[attr].length;x+=1)
+            if(this.kb_attrListeners !== undefined && this.kb_attrListeners[attr] !== undefined && typeof func === 'function')
             {
-              if(_attrListeners[attr][x].toString() === func.toString())
+              for(var x=0;x<this.kb_attrListeners[attr].length;x+=1)
               {
-                _attrListeners[attr].splice(x,1);
+                if(this.kb_attrListeners[attr][x].toString() === func.toString())
+                {
+                  this.kb_attrListeners[attr].splice(x,1);
+                }
               }
             }
+            return this;
+          }
+          else
+          {
+            if(_attrListeners[attr] !== undefined && typeof func === 'function')
+            {
+              for(var x=0;x<_attrListeners[attr].length;x+=1)
+              {
+                if(_attrListeners[attr][x].toString() === func.toString())
+                {
+                  _attrListeners[attr].splice(x,1);
+                }
+              }
+            }
+            return Bind;
           }
         }
 
+        /*** Remove Post Set Attribute Listener ***
+         -- removes a property event listener from the desired property
+         */
         Bind.removeAttrUpdateListener = function(attr,func)
         {
-          if(_attrUpdateListeners[attr] !== undefined && typeof func === 'function')
+          if(this.toString() !== Bind.toString())
           {
-            for(var x=0;x<_attrUpdateListeners[attr].length;x+=1)
+            if(this.kb_attrUpdateListeners !== undefined && this.kb_attrUpdateListeners[attr] !== undefined && typeof func === 'function')
             {
-              if(_attrUpdateListeners[attr][x].toString() === func.toString())
+              for(var x=0;x<this.kb_attrUpdateListeners[attr].length;x+=1)
               {
-                _attrUpdateListeners[attr].splice(x,1);
+                if(this.kb_attrUpdateListeners[attr][x].toString() === func.toString())
+                {
+                  this.kb_attrUpdateListeners[attr].splice(x,1);
+                }
               }
             }
+            return this;
+          }
+          else
+          {
+            if(_attrUpdateListeners[attr] !== undefined && typeof func === 'function')
+            {
+              for(var x=0;x<_attrUpdateListeners[attr].length;x+=1)
+              {
+                if(_attrUpdateListeners[attr][x].toString() === func.toString())
+                {
+                  _attrUpdateListeners[attr].splice(x,1);
+                }
+              }
+            }
+            return Bind;
           }
         }
+
+        //injects main prototypes for listening to dom changes
+        Bind.injectPrototypes(HTMLInputElement,_set,_update);
+        Bind.injectPrototypes(HTMLTextAreaElement,_set,_update);
+        Bind.injectPrototypes(Node,_set,_update);
+        Bind.injectPrototypes(Element,_set,_update);
+        Bind.injectPrototypes(HTMLElement,_set,_update);
+        Bind.injectPrototypes(Document,_set,_update);
 
         return Bind;
 	}
